@@ -1,198 +1,266 @@
-// Robot01.cpp: îïðåäåëÿåò ýêñïîðòèðîâàííûå ôóíêöèè äëÿ ïðèëîæåíèÿ DLL.
+// Robot01.cpp: определяет экспортированные функции для приложения DLL.
 //
 
 #include "stdafx.h"
-#define Info _stepInfo
+
+StepInfo* stepInfo;
+
+struct Point
+{
+	Point(){};
+	Point(int _x, int _y) :
+		x(_x), y(_y){};
+	int x;
+	int y;
+};
+
+struct riv
+{
+	int P;
+	int ID;
+	int rast;
+	int x, y;
+};
+
+UINT Pythagoras(int x, int y)
+{
+	return UINT(sqrt(x*x + y*y));
+}
+
+RobotInfo* myInfo;
+
+Point getDistance(Point posA, Point posB)
+{
+	Point vec;
+	int dist1_x = abs(posA.x - posB.x);
+	int dist1_y = abs(posA.y - posB.y);
+
+	int left_x, right_x;
+	if (posA.x > posB.x) {
+		right_x = posA.x;
+		left_x = posB.x;
+	}
+	else {
+		right_x = posB.x;
+		left_x = posA.x;
+	}
+	int dist2_x = left_x + (stepInfo->gameConfig.W - right_x);
+	if (dist1_x <= dist2_x) {
+		vec.x = posB.x - posA.x;
+	}
+	else {
+		right_x == posB.x ? vec.x = -dist2_x : vec.x = dist2_x;
+	}
+
+	int bottom_y, top_y;
+	if (posA.y > posB.y) {
+		bottom_y = posA.y;
+		top_y = posB.y;
+	}
+	else {
+		bottom_y = posB.y;
+		top_y = posA.y;
+	}
+	int dist2_y = top_y + (stepInfo->gameConfig.H - bottom_y);
+	if (dist1_y <= dist2_y) {
+		vec.y = posB.y - posA.y;
+	}
+	else {
+		bottom_y == posB.y ? vec.y = -dist2_y : vec.y = dist2_y;
+	}
+
+	return vec;
+}
+
+//Поиск станции подзарядки энергии
+Point getCStation(int x, int y){
+	UINT min_dX = stepInfo->gameConfig.W + 1;
+	UINT min_dY = stepInfo->gameConfig.H + 1;
+	int real_dX = 1000, real_dY = 1000;
+	Point its;
+	its.x = x;
+	its.y = y;
+	for (auto station = stepInfo->chargingStations.begin(); station != stepInfo->chargingStations.end(); ++station) {
+		Point vec = getDistance(its, Point(station->first, station->second));
+		if (Pythagoras(vec.x, vec.y) < Pythagoras(min_dX, min_dY)) {
+			real_dX = vec.x;
+			real_dY = vec.y;
+			min_dX = abs(vec.x);
+			min_dY = abs(vec.y);
+		}
+	}
+	return Point(real_dX, real_dY);
+}
+
+//Поиск станции тех обсуживания
+Point getMStation(int x, int y){
+	UINT min_dX = stepInfo->gameConfig.W + 1;
+	UINT min_dY = stepInfo->gameConfig.H + 1;
+	int real_dX = 1000, real_dY = 1000;
+	Point its;
+	its.x = x;
+	its.y = y;
+	for (auto station = stepInfo->maintenance.begin(); station != stepInfo->maintenance.end(); ++station) {
+		Point vec = getDistance(its, Point(station->first, station->second));
+		if (Pythagoras(vec.x, vec.y) < Pythagoras(min_dX, min_dY)) {
+			real_dX = vec.x;
+			real_dY = vec.y;
+			min_dX = abs(vec.x);
+			min_dY = abs(vec.y);
+		}
+	}
+	return Point(real_dX, real_dY);
+}
 
 extern "C" __declspec(dllexport) void DoStep(StepInfo* _stepInfo)
 {
-	RobotInfo* myInfo;
-	for (auto it = Info->robotsInfo.begin(); it != Info->robotsInfo.end(); ++it)
+	srand(time(NULL));
+	
+	vector <riv> rivals;
+
+	stepInfo = _stepInfo;
+
+	int num,  ID = stepInfo->ID;//мой номер
+	for (int i = 0; i < stepInfo->robotsInfo.size(); i++)
 	{
-		if (Info->ID == it->ID) {
-			myInfo = new RobotInfo(*it);
+		if (stepInfo->robotsInfo[i].ID == ID)
+		{
+			num = i;
 			break;
 		}
 	}
+	int E = stepInfo->robotsInfo[num].E;
+	int L = stepInfo->robotsInfo[num].L;
+	int A = stepInfo->robotsInfo[num].A;
+	int P = stepInfo->robotsInfo[num].P;
+	int V = stepInfo->robotsInfo[num].V;
+	int x = stepInfo->robotsInfo[num].x;
+	int y = stepInfo->robotsInfo[num].y;
 
-	int me = myInfo->ID;
-	int x = myInfo->x;
-	int y = myInfo->y;
-	int L = myInfo->L;
-	int E = myInfo->E;
+	int Emax = stepInfo->gameConfig.E_max;
+	int Lmax = stepInfo->gameConfig.L_max;
+	int Vmax = stepInfo->gameConfig.V_max;
+	int Rmax = stepInfo->gameConfig.R_max;
 
-	Info->pRobotActions->addActionRedistribution(0.80*L - 1, 1, 0.20*L);
+	int Smax = 1.0*Vmax*V / Lmax*E/Emax;
+	int S_amax = 1.0*Rmax*V / Lmax*E / Emax;
+	int Amax = 1.0*A * E / Emax;
+	int Pmax = 1.0*P * E / Emax;
+	Point energy, mech;
+	energy = getCStation(x, y);
+	mech = getMStation(x, y);
 
-	for (std::list<pair<unsigned int, unsigned int>>::iterator it = Info->chargingStations.begin(); it != Info->chargingStations.end(); it++)
+	int se = Pythagoras(energy.x, energy.y);
+	int sm = Pythagoras(mech.x, mech.y);
+
+	if ((se == 0) && ((E<0.95*Emax) || (stepInfo->stepNumber>975)) && (L>0.7*Lmax))
 	{
-		if (it->first == x && it->second == y && E < 0.95*Info->gameConfig.E_max)
-		{
-			Info->pRobotActions->addActionRedistribution(0, L, 0);
-			return;
-		}
+		stepInfo->pRobotActions->addActionRedistribution(0, L, 0);
+		return;
 	}
-	for (std::list<pair<unsigned int, unsigned int>>::iterator it = Info->maintenance.begin(); it != Info->maintenance.end(); it++)
+
+	if ((sm == 0) && (L < Lmax))
 	{
-		if (it->first == x && it->second == y && L < 0.80*Info->gameConfig.L_max)
-		{
-			Info->pRobotActions->addActionRedistribution(0, L, 0);
-			return;
-		}
+		stepInfo->pRobotActions->addActionRedistribution(0, L, 0);
+		return;
 	}
-
-	if ((E < 0.9*Info->gameConfig.E_max) || (Info->stepNumber > 0.99 * Info->gameConfig.N))
+	
+	if ((E < 0.85*Emax) || (stepInfo->stepNumber>980))
 	{
-		int V = Info->gameConfig.V_max;
-		if (V > L)
-			V = L;
-		Info->pRobotActions->addActionRedistribution(0, L - V + 1, V - 1);
-		int eid = 0;
-		int ex = Info->chargingStations.begin()->first;
-		int ey = Info->chargingStations.begin()->second;
-		double mindist = sqrt(pow(ex - x, 2) + pow(ey - y, 2));
-		int mex = ex;
-		int mey = ey;
-		for (std::list<pair<unsigned int, unsigned int>>::iterator it = Info->chargingStations.begin(); it != Info->chargingStations.end(); it++)
-		{
-			ex = Info->chargingStations.begin()->first;
-			ey = Info->chargingStations.begin()->second;
-			double curdist = sqrt(pow(ex - x, 2) + pow(ey - y, 2));
-			if (curdist < mindist)
-			{
-				mindist = curdist;
-				mex = ex;
-				mey = ey;
-			}
-		}
 
-		double maxstep = myInfo->V*Info->gameConfig.V_max / Info->gameConfig.L_max*myInfo->E / Info->gameConfig.E_max;
-		if (maxstep < mindist)
+		if (Smax > se)
 		{
-			int dx, dy;
-			dx = (mex - x)*maxstep / mindist;
-			dy = (mey - y)*maxstep / mindist;
-			Info->pRobotActions->addActionMove(dx, dy);
+			stepInfo->pRobotActions->addActionMove(energy.x, energy.y);
+			stepInfo->pRobotActions->addActionRedistribution(0, L, 0);
 		}
 		else
 		{
-			int dx, dy;
-			dx = mex - x;
-			dy = mey - y;
-			Info->pRobotActions->addActionMove(dx, dy);
-			Info->pRobotActions->addActionRedistribution(0, L, 0);
+			energy.x = 1.0*energy.x*Smax / se;
+			energy.y = 1.0*energy.y*Smax / se;
+			stepInfo->pRobotActions->addActionRedistribution(0, 0.4*L, 0.6*L);
+			stepInfo->pRobotActions->addActionMove(energy.x, energy.y);
 		}
+		return;
 	}
 
-	else
+
+	if ((L< 0.85*Lmax))
 	{
-		if (L == Info->gameConfig.L_max)
+
+		if (Smax > sm)
 		{
-
-			int kill;
-
-			Info->pRobotActions->addActionRedistribution(0.80*L - 1, 1, 0.20*L);
-			int enx = 0;
-			int eny = 0;
-			int minx = 0;
-			int miny = 0;
-			double mindisttoen = Info->gameConfig.H;
-			double distance = 0;
-			double attack = Info->gameConfig.R_max*myInfo->V / Info->gameConfig.L_max*myInfo->E / Info->gameConfig.E_max;
-
-			for (auto it = Info->robotsInfo.begin(); it != Info->robotsInfo.end(); ++it)
-			{
-				enx = it->x;
-				eny = it->y;
-				distance = sqrt(pow(enx - x, 2) + pow(eny - y, 2));
-				if ((it->Alive) && (myInfo->Author != it->Author) && (2 * myInfo->A*myInfo->E / Info->gameConfig.E_max>it->P*it->E / Info->gameConfig.E_max))
-				{
-					if (distance < mindisttoen)
-					{
-						mindisttoen = distance;
-						kill = it->ID;
-						minx = enx;
-						miny = eny;
-					}
-				}
-			}
-
-			if (attack>mindisttoen)
-			{
-				Info->pRobotActions->addActionAttack(kill);
-			}
-
-			else
-			{
-				double maxstep = myInfo->V*Info->gameConfig.V_max / Info->gameConfig.L_max*myInfo->E / Info->gameConfig.E_max;
-				double curdist = sqrt(pow(minx - x, 2) + pow(miny - y, 2));
-				int dx, dy;
-				if (curdist > maxstep)
-				{
-					dx = (minx - x)*maxstep / distance;
-					dy = (miny - y)*maxstep / distance;
-				}
-
-				else
-				{
-					dx = enx - x;
-					dy = eny - y;
-					if (enx > x)
-						dx -= 1;
-					else if (enx < x)
-						dx += 1;
-					else if (eny > y)
-						dy -= 1;
-					else dy += 1;
-				}
-				Info->pRobotActions->addActionMove(dx, dy);
-			}
+			stepInfo->pRobotActions->addActionMove(mech.x, mech.y);
+			stepInfo->pRobotActions->addActionRedistribution(0, L, 0);
 		}
-
 		else
 		{
-			int V = Info->gameConfig.V_max;
-			if (V > L)
-				V = L;
-			Info->pRobotActions->addActionRedistribution(0, L - V, V);
+			if (L>0.25*Lmax)
+				stepInfo->pRobotActions->addActionRedistribution(0, 0.4*L, 0.6*L);
+			else stepInfo->pRobotActions->addActionRedistribution(0, 0, L);
 
-			int lx = Info->maintenance.begin()->first;
-			int ly = Info->maintenance.begin()->second;
-			int mlx = lx;
-			int mly = ly;
-			double mindist = sqrt(pow(lx - x, 2) + pow(ly - y, 2));
+			mech.x = 1.0*mech.x*Smax / sm;
+			mech.y = 1.0*mech.y*Smax / sm;
+			stepInfo->pRobotActions->addActionMove(mech.x, mech.y);
 
-			for (std::list<pair<unsigned int, unsigned int>>::iterator it = Info->maintenance.begin(); it != Info->maintenance.end(); it++)
-			{
-
-				lx = it->first;
-				ly = it->second;
-				double curdist = sqrt(pow(lx - x, 2) + pow(ly - y, 2));
-				if (curdist < mindist)
-				{
-					mindist = curdist;
-					mlx = lx;
-					mly = ly;
-				}
-			}
-
-
-			double maxstep = myInfo->V*Info->gameConfig.V_max / Info->gameConfig.L_max*myInfo->E / Info->gameConfig.E_max;
-			if (maxstep < mindist)
-			{
-				int dx, dy;
-				dx = (mlx - x)*maxstep / mindist;
-				dy = (mly - y)*maxstep / mindist;
-				Info->pRobotActions->addActionMove(dx, dy);
-			}
-			else
-			{
-				int dx, dy;
-				dx = mlx - x;
-				dy = mly - y;
-				Info->pRobotActions->addActionMove(dx, dy);
-				Info->pRobotActions->addActionRedistribution(0, L, 0);
-			}
 		}
+		return;
 	}
+
+	for (int i = 0; i < stepInfo->robotsInfo.size(); i++)
+	{
+
+		if (stepInfo->robotsInfo[i].Author != "Aganov")
+		{
+			Point its, rival;
+			its.x = x;
+			its.y = y;
+			rival.x = stepInfo->robotsInfo[i].x;
+			rival.y = stepInfo->robotsInfo[i].y;
+			Point dist = getDistance(its, rival);
+			int rast = Pythagoras(dist.x, dist.y);
+			if ((S_amax >= rast) && (1.0*A*E > 0.6*stepInfo->robotsInfo[i].P*stepInfo->robotsInfo[i].E) && ((dist.x != 0) || (dist.y != 0)) && (stepInfo->robotsInfo[i].Alive))
+			{
+				riv ff;
+				ff.P = stepInfo->robotsInfo[i].P*stepInfo->robotsInfo[i].E;
+				ff.ID = stepInfo->robotsInfo[i].ID;
+				ff.rast = rast;
+				ff.x = dist.x;
+				ff.y = dist.y;
+				rivals.push_back(ff);
+			}
+
+
+		}
+
+	}
+
+	if (rivals.size() != 0)
+	{
+		int id_l=0, min_P = 100000;
+		for (int i = 1; i < rivals.size(); i++)
+		{
+			if (min_P>rivals[i].P)
+			{
+				id_l = i;
+				min_P = rivals[i].P;
+			}
+
+		}
+
+		stepInfo->pRobotActions->addActionAttack(rivals[id_l].ID);
+		stepInfo->pRobotActions->addActionMove(rivals[id_l].x+1, rivals[id_l].y);
+		return;
+	}
+
+
+	stepInfo->pRobotActions->addActionRedistribution(0.35*L, 0.4*L, 0.25*L);
+	if (stepInfo->stepNumber % 2) Smax = -Smax;
+	stepInfo->pRobotActions->addActionMove(Smax, 0);
+
+	
 	return;
 }
+
+
+
+
